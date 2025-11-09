@@ -1,0 +1,26 @@
+{
+  "tests": [
+    {
+      "name": "Test Telegram auth with valid data",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "telegram_data": {
+          "id": 123456789,
+          "first_name": "Test",
+          "last_name": "User",
+          "username": "testuser",
+          "photo_url": "https://example.com/photo.jpg"
+        }
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "success": true,
+        "user": {
+          "telegram_id": 123456789
+        }
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

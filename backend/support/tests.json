@@ -1,0 +1,18 @@
+{
+  "tests": [
+    {
+      "name": "Send support message",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "user_id": 1,
+        "message": "Help me with my order"
+      },
+      "expectedStatus": 201,
+      "expectedBody": {
+        "success": true
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

@@ -1,329 +1,675 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Progress } from '@/components/ui/progress';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import Icon from '@/components/ui/icon';
+import TelegramLoginButton from '@/components/TelegramLoginButton';
+import Profile from '@/components/Profile';
+import { getStoredUser, User } from '@/lib/auth';
+import { api } from '@/lib/api';
+import { useToast } from '@/hooks/use-toast';
 
 export default function Index() {
-  const [topUpAmount, setTopUpAmount] = useState('');
-  const [email, setEmail] = useState('');
+  const [user, setUser] = useState<User | null>(null);
+  const [activeTab, setActiveTab] = useState('home');
+  const [showAuthDialog, setShowAuthDialog] = useState(false);
+  
+  const [topupAmount, setTopupAmount] = useState('');
+  const [steamLogin, setSteamLogin] = useState('');
+  const [selectedRegion, setSelectedRegion] = useState('');
+  const [topupProgress, setTopupProgress] = useState(0);
+  const [isProcessing, setIsProcessing] = useState(false);
+  
+  const [supportMessage, setSupportMessage] = useState('');
+  const [supportMessages, setSupportMessages] = useState<any[]>([]);
+  
+  const { toast } = useToast();
 
-  const regions = [
-    { name: 'Турция', flag: '🇹🇷', price: 'от 500₽' },
-    { name: 'Аргентина', flag: '🇦🇷', price: 'от 600₽' },
-    { name: 'Казахстан', flag: '🇰🇿', price: 'от 400₽' },
-    { name: 'США', flag: '🇺🇸', price: 'от 800₽' },
-  ];
+  useEffect(() => {
+    const storedUser = getStoredUser();
+    if (storedUser) {
+      setUser(storedUser);
+    }
+  }, []);
 
-  const features = [
-    { icon: 'Zap', title: 'Быстро', desc: 'Пополнение за 5 минут' },
-    { icon: 'Globe', title: 'Любой регион', desc: 'Работаем со всеми странами' },
-    { icon: 'Shield', title: 'Безопасно', desc: 'Гарантия возврата' },
-    { icon: 'DollarSign', title: 'Выгодно', desc: 'Лучшие цены на рынке' },
-  ];
+  useEffect(() => {
+    if (user && activeTab === 'support') {
+      loadSupportMessages();
+    }
+  }, [user, activeTab]);
 
-  const reviews = [
-    { name: 'Алексей М.', rating: 5, text: 'Быстрое пополнение, все прошло отлично!' },
-    { name: 'Мария К.', rating: 5, text: 'Сменила регион за 10 минут, рекомендую!' },
-    { name: 'Дмитрий П.', rating: 5, text: 'Лучший сервис, пользуюсь уже год' },
-  ];
+  const loadSupportMessages = async () => {
+    if (!user) return;
+    try {
+      const result = await api.getSupportMessages(user.id);
+      if (result.messages) {
+        setSupportMessages(result.messages);
+      }
+    } catch (error) {
+      console.error('Failed to load support messages:', error);
+    }
+  };
 
-  const faqs = [
-    { q: 'Как быстро происходит пополнение?', a: 'Обычно пополнение занимает от 5 до 15 минут после подтверждения оплаты.' },
-    { q: 'Безопасно ли менять регион аккаунта?', a: 'Да, мы используем официальные методы смены региона через поддержку Steam.' },
-    { q: 'Какие способы оплаты вы принимаете?', a: 'Принимаем карты РФ, СБП, электронные кошельки и криптовалюту.' },
-    { q: 'Есть ли гарантия возврата?', a: 'Да, если услуга не была оказана, мы возвращаем 100% суммы.' },
-  ];
+  const handleAuth = (authUser: User) => {
+    setUser(authUser);
+    setShowAuthDialog(false);
+    toast({
+      title: 'Успешный вход!',
+      description: `Добро пожаловать, ${authUser.first_name}!`,
+    });
+  };
+
+  const handleTopup = async () => {
+    if (!user) {
+      setShowAuthDialog(true);
+      return;
+    }
+
+    if (!steamLogin || !topupAmount) {
+      toast({
+        title: 'Ошибка',
+        description: 'Заполните все поля',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsProcessing(true);
+    setTopupProgress(0);
+
+    try {
+      const result = await api.createTransaction({
+        user_id: user.id,
+        type: 'topup',
+        amount: parseFloat(topupAmount),
+        steam_login: steamLogin,
+      });
+
+      for (let i = 0; i <= 100; i += 10) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+        setTopupProgress(i);
+      }
+
+      toast({
+        title: 'Успешно!',
+        description: `Пополнение на ${topupAmount}₽ обрабатывается`,
+      });
+
+      setSteamLogin('');
+      setTopupAmount('');
+    } catch (error) {
+      toast({
+        title: 'Ошибка',
+        description: 'Не удалось создать заявку',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsProcessing(false);
+      setTimeout(() => setTopupProgress(0), 1000);
+    }
+  };
+
+  const handleRegionChange = async () => {
+    if (!user) {
+      setShowAuthDialog(true);
+      return;
+    }
+
+    if (!steamLogin || !selectedRegion) {
+      toast({
+        title: 'Ошибка',
+        description: 'Выберите регион и укажите логин',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsProcessing(true);
+    setTopupProgress(0);
+
+    try {
+      await api.createTransaction({
+        user_id: user.id,
+        type: 'region_change',
+        steam_login: steamLogin,
+        region: selectedRegion,
+      });
+
+      for (let i = 0; i <= 100; i += 10) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+        setTopupProgress(i);
+      }
+
+      toast({
+        title: 'Успешно!',
+        description: `Заявка на смену региона на ${selectedRegion} принята`,
+      });
+
+      setSteamLogin('');
+      setSelectedRegion('');
+    } catch (error) {
+      toast({
+        title: 'Ошибка',
+        description: 'Не удалось создать заявку',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsProcessing(false);
+      setTimeout(() => setTopupProgress(0), 1000);
+    }
+  };
+
+  const handleSendMessage = async () => {
+    if (!user || !supportMessage.trim()) return;
+
+    try {
+      const result = await api.sendSupportMessage(user.id, supportMessage);
+      if (result.success) {
+        setSupportMessage('');
+        loadSupportMessages();
+        toast({
+          title: 'Сообщение отправлено',
+          description: 'Оператор ответит вам в ближайшее время',
+        });
+      }
+    } catch (error) {
+      toast({
+        title: 'Ошибка',
+        description: 'Не удалось отправить сообщение',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  if (activeTab === 'profile' && user) {
+    return <Profile user={user} />;
+  }
 
   return (
     <div className="min-h-screen">
-      <header className="border-b border-border backdrop-blur-sm bg-background/80 sticky top-0 z-50">
+      <header className="border-b border-border backdrop-blur-md bg-background/90 sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-bold gradient-text">GE.PAY</h1>
-            <nav className="hidden md:flex gap-6">
-              <a href="#topup" className="hover:text-primary transition-colors">Пополнение</a>
-              <a href="#region" className="hover:text-primary transition-colors">Смена региона</a>
-              <a href="#faq" className="hover:text-primary transition-colors">FAQ</a>
-              <a href="#contacts" className="hover:text-primary transition-colors">Контакты</a>
+            <div className="flex items-center gap-2">
+              <div className="w-10 h-10 rounded-xl gradient-primary flex items-center justify-center">
+                <Icon name="Gamepad2" size={24} className="text-white" />
+              </div>
+              <h1 className="text-2xl font-bold">GE.PAY</h1>
+            </div>
+            
+            <nav className="hidden md:flex gap-1">
+              <Button
+                variant={activeTab === 'home' ? 'default' : 'ghost'}
+                onClick={() => setActiveTab('home')}
+                className={activeTab === 'home' ? 'gradient-primary border-0' : ''}
+              >
+                <Icon name="Home" size={18} className="mr-2" />
+                Главная
+              </Button>
+              <Button
+                variant={activeTab === 'topup' ? 'default' : 'ghost'}
+                onClick={() => setActiveTab('topup')}
+                className={activeTab === 'topup' ? 'gradient-primary border-0' : ''}
+              >
+                <Icon name="Wallet" size={18} className="mr-2" />
+                Пополнение
+              </Button>
+              <Button
+                variant={activeTab === 'region' ? 'default' : 'ghost'}
+                onClick={() => setActiveTab('region')}
+                className={activeTab === 'region' ? 'gradient-primary border-0' : ''}
+              >
+                <Icon name="MapPin" size={18} className="mr-2" />
+                Смена региона
+              </Button>
+              <Button
+                variant={activeTab === 'support' ? 'default' : 'ghost'}
+                onClick={() => setActiveTab('support')}
+                className={activeTab === 'support' ? 'gradient-primary border-0' : ''}
+              >
+                <Icon name="MessageCircle" size={18} className="mr-2" />
+                Поддержка
+              </Button>
             </nav>
-            <Button className="gradient-primary hover-scale border-0">
-              Войти
-            </Button>
+
+            {user ? (
+              <Button
+                variant="outline"
+                onClick={() => setActiveTab('profile')}
+                className="gap-2"
+              >
+                <Icon name="User" size={18} />
+                {user.first_name}
+              </Button>
+            ) : (
+              <Button onClick={() => setShowAuthDialog(true)} className="gradient-primary border-0">
+                <Icon name="LogIn" size={18} className="mr-2" />
+                Войти
+              </Button>
+            )}
           </div>
         </div>
       </header>
 
-      <section className="relative py-20 md:py-32 overflow-hidden">
-        <div className="absolute inset-0 gradient-secondary opacity-10"></div>
-        <div className="container mx-auto px-4 relative z-10">
-          <div className="max-w-4xl mx-auto text-center">
-            <Badge className="mb-4 gradient-accent border-0 text-white">
-              Работаем с 2020 года
-            </Badge>
-            <h2 className="text-4xl md:text-6xl font-bold mb-6 animate-fade-in">
-              Пополнение Steam
-              <br />
-              <span className="gradient-text">без ограничений</span>
-            </h2>
-            <p className="text-xl text-muted-foreground mb-8">
-              Быстрое пополнение Steam для любого региона. Меняем регион аккаунта за 10 минут.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Button size="lg" className="gradient-primary hover-scale border-0 text-lg px-8">
-                <Icon name="Wallet" className="mr-2" size={20} />
-                Пополнить сейчас
-              </Button>
-              <Button size="lg" variant="outline" className="text-lg px-8 hover-scale">
-                <Icon name="MapPin" className="mr-2" size={20} />
-                Сменить регион
-              </Button>
+      {activeTab === 'home' && (
+        <>
+          <section className="relative py-24 overflow-hidden">
+            <div className="absolute inset-0 gradient-secondary opacity-5"></div>
+            <div className="container mx-auto px-4 relative z-10 text-center max-w-4xl">
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary mb-6">
+                <Icon name="Zap" size={16} />
+                <span className="text-sm font-semibold">Работаем с 2020 года • 50,000+ довольных клиентов</span>
+              </div>
+              
+              <h2 className="text-5xl md:text-7xl font-bold mb-6">
+                Пополнение Steam
+                <br />
+                <span className="gradient-text">быстро и надёжно</span>
+              </h2>
+              
+              <p className="text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
+                Моментальное пополнение Steam для любого региона. Смена региона за 10 минут.
+                Безопасно, выгодно, с поддержкой 24/7
+              </p>
+              
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                <Button
+                  size="lg"
+                  onClick={() => setActiveTab('topup')}
+                  className="gradient-primary border-0 text-lg px-8 h-14"
+                >
+                  <Icon name="Wallet" className="mr-2" size={22} />
+                  Пополнить сейчас
+                </Button>
+                <Button
+                  size="lg"
+                  variant="outline"
+                  onClick={() => setActiveTab('region')}
+                  className="text-lg px-8 h-14"
+                >
+                  <Icon name="Globe" className="mr-2" size={22} />
+                  Сменить регион
+                </Button>
+              </div>
             </div>
-          </div>
-        </div>
-      </section>
+          </section>
 
-      <section className="py-16 bg-card/50">
-        <div className="container mx-auto px-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {features.map((feature, idx) => (
-              <Card key={idx} className="hover-scale border-border/50 bg-card/80 backdrop-blur">
-                <CardHeader>
-                  <div className="w-12 h-12 rounded-xl gradient-primary flex items-center justify-center mb-4">
-                    <Icon name={feature.icon} className="text-white" size={24} />
-                  </div>
-                  <CardTitle className="text-xl">{feature.title}</CardTitle>
-                  <CardDescription>{feature.desc}</CardDescription>
-                </CardHeader>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
+          <section className="py-16 bg-card/30">
+            <div className="container mx-auto px-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                {[
+                  { icon: 'Clock', title: '5-15 минут', desc: 'Среднее время пополнения' },
+                  { icon: 'Shield', title: '100% гарантия', desc: 'Возврат при любой проблеме' },
+                  { icon: 'Headphones', title: '24/7 поддержка', desc: 'Всегда на связи' },
+                  { icon: 'Percent', title: 'Бонусы 3%', desc: 'На каждое пополнение' },
+                ].map((item, idx) => (
+                  <Card key={idx} className="text-center border-border/50 bg-card/80 backdrop-blur">
+                    <CardHeader>
+                      <div className="w-16 h-16 mx-auto rounded-2xl gradient-primary flex items-center justify-center mb-4">
+                        <Icon name={item.icon} className="text-white" size={32} />
+                      </div>
+                      <CardTitle className="text-2xl">{item.title}</CardTitle>
+                      <CardDescription className="text-base">{item.desc}</CardDescription>
+                    </CardHeader>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          </section>
+        </>
+      )}
 
-      <section id="topup" className="py-20">
-        <div className="container mx-auto px-4">
-          <div className="max-w-2xl mx-auto">
+      {activeTab === 'topup' && (
+        <section className="py-16">
+          <div className="container mx-auto px-4 max-w-2xl">
             <div className="text-center mb-12">
-              <h3 className="text-3xl md:text-4xl font-bold mb-4">
-                Пополнить <span className="gradient-text">Steam</span>
+              <h3 className="text-4xl font-bold mb-4">
+                Пополнение <span className="gradient-text">Steam</span>
               </h3>
-              <p className="text-muted-foreground">
-                Выберите сумму и получите средства на аккаунт за 5 минут
+              <p className="text-muted-foreground text-lg">
+                Получите средства на аккаунт за 5-15 минут
               </p>
             </div>
 
-            <Card className="border-border/50 bg-card/80 backdrop-blur">
+            <Card className="border-border/50 bg-card/90 backdrop-blur">
               <CardHeader>
-                <CardTitle>Форма пополнения</CardTitle>
-                <CardDescription>Заполните данные для быстрого пополнения</CardDescription>
+                <CardTitle className="text-2xl">Форма пополнения</CardTitle>
+                <CardDescription>Заполните данные и получите средства моментально</CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email или логин Steam</Label>
+                  <Label htmlFor="steam-login" className="text-base">Логин Steam</Label>
                   <Input
-                    id="email"
-                    placeholder="example@steam.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="bg-input border-border"
+                    id="steam-login"
+                    placeholder="Введите ваш логин Steam"
+                    value={steamLogin}
+                    onChange={(e) => setSteamLogin(e.target.value)}
+                    className="h-12 text-base"
                   />
                 </div>
 
                 <div className="space-y-4">
-                  <Label>Выберите сумму пополнения</Label>
+                  <Label className="text-base">Выберите сумму</Label>
                   <div className="grid grid-cols-3 gap-3">
-                    {['500₽', '1000₽', '2000₽', '3000₽', '5000₽', '10000₽'].map((amount) => (
+                    {['500', '1000', '2000', '3000', '5000', '10000'].map((amount) => (
                       <Button
                         key={amount}
-                        variant={topUpAmount === amount ? 'default' : 'outline'}
-                        onClick={() => setTopUpAmount(amount)}
-                        className={topUpAmount === amount ? 'gradient-primary border-0' : ''}
+                        variant={topupAmount === amount ? 'default' : 'outline'}
+                        onClick={() => setTopupAmount(amount)}
+                        className={`h-14 text-lg ${topupAmount === amount ? 'gradient-primary border-0' : ''}`}
                       >
-                        {amount}
+                        {amount}₽
                       </Button>
                     ))}
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="custom-amount">Или введите свою сумму</Label>
+                  <Label htmlFor="custom-amount" className="text-base">Или своя сумма</Label>
                   <Input
                     id="custom-amount"
                     type="number"
                     placeholder="Минимум 100₽"
-                    className="bg-input border-border"
+                    value={topupAmount}
+                    onChange={(e) => setTopupAmount(e.target.value)}
+                    className="h-12 text-base"
                   />
                 </div>
 
-                <Button className="w-full gradient-primary hover-scale border-0 text-lg py-6">
-                  <Icon name="CreditCard" className="mr-2" size={20} />
-                  Перейти к оплате
+                {isProcessing && topupProgress > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span>Обработка пополнения...</span>
+                      <span>{topupProgress}%</span>
+                    </div>
+                    <Progress value={topupProgress} className="h-2" />
+                  </div>
+                )}
+
+                <Button
+                  onClick={handleTopup}
+                  disabled={isProcessing}
+                  className="w-full h-14 gradient-primary border-0 text-lg"
+                >
+                  {isProcessing ? (
+                    <>
+                      <Icon name="Loader2" className="mr-2 animate-spin" size={20} />
+                      Обработка...
+                    </>
+                  ) : (
+                    <>
+                      <Icon name="CreditCard" className="mr-2" size={20} />
+                      Пополнить на {topupAmount || '0'}₽
+                    </>
+                  )}
                 </Button>
+
+                <p className="text-sm text-center text-muted-foreground">
+                  Бонус 3% начисляется автоматически на баланс после пополнения
+                </p>
               </CardContent>
             </Card>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
-      <section id="region" className="py-20 bg-card/50">
-        <div className="container mx-auto px-4">
-          <div className="max-w-4xl mx-auto">
+      {activeTab === 'region' && (
+        <section className="py-16">
+          <div className="container mx-auto px-4 max-w-4xl">
             <div className="text-center mb-12">
-              <h3 className="text-3xl md:text-4xl font-bold mb-4">
-                Смена <span className="gradient-text">региона</span>
+              <h3 className="text-4xl font-bold mb-4">
+                Смена <span className="gradient-text">региона</span> Steam
               </h3>
-              <p className="text-muted-foreground">
-                Меняем регион Steam быстро и безопасно
+              <p className="text-muted-foreground text-lg">
+                Меняем регион безопасно через официальную поддержку Steam
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
-              {regions.map((region, idx) => (
-                <Card key={idx} className="hover-scale border-border/50 bg-card/80 backdrop-blur">
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <span className="text-4xl">{region.flag}</span>
-                        <div>
-                          <CardTitle>{region.name}</CardTitle>
-                          <CardDescription className="text-primary font-semibold">
-                            {region.price}
-                          </CardDescription>
-                        </div>
-                      </div>
-                      <Button className="gradient-primary border-0">
-                        Выбрать
-                      </Button>
-                    </div>
-                  </CardHeader>
-                </Card>
-              ))}
-            </div>
-
-            <Card className="border-primary/50 bg-primary/5">
+            <Card className="border-border/50 bg-card/90 backdrop-blur mb-8">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
+                <CardTitle className="text-2xl">Заявка на смену региона</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="space-y-2">
+                  <Label htmlFor="region-login" className="text-base">Логин Steam</Label>
+                  <Input
+                    id="region-login"
+                    placeholder="Введите ваш логин Steam"
+                    value={steamLogin}
+                    onChange={(e) => setSteamLogin(e.target.value)}
+                    className="h-12 text-base"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-base">Выберите регион</Label>
+                  <Select value={selectedRegion} onValueChange={setSelectedRegion}>
+                    <SelectTrigger className="h-12 text-base">
+                      <SelectValue placeholder="Выберите страну" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Турция">🇹🇷 Турция (от 500₽)</SelectItem>
+                      <SelectItem value="Аргентина">🇦🇷 Аргентина (от 600₽)</SelectItem>
+                      <SelectItem value="Казахстан">🇰🇿 Казахстан (от 400₽)</SelectItem>
+                      <SelectItem value="США">🇺🇸 США (от 800₽)</SelectItem>
+                      <SelectItem value="Индия">🇮🇳 Индия (от 450₽)</SelectItem>
+                      <SelectItem value="Бразилия">🇧🇷 Бразилия (от 550₽)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {isProcessing && topupProgress > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span>Обработка заявки...</span>
+                      <span>{topupProgress}%</span>
+                    </div>
+                    <Progress value={topupProgress} className="h-2" />
+                  </div>
+                )}
+
+                <Button
+                  onClick={handleRegionChange}
+                  disabled={isProcessing}
+                  className="w-full h-14 gradient-primary border-0 text-lg"
+                >
+                  {isProcessing ? (
+                    <>
+                      <Icon name="Loader2" className="mr-2 animate-spin" size={20} />
+                      Обработка...
+                    </>
+                  ) : (
+                    <>
+                      <Icon name="MapPin" className="mr-2" size={20} />
+                      Сменить регион
+                    </>
+                  )}
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card className="border-primary/30 bg-primary/5">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-xl">
                   <Icon name="Info" size={24} className="text-primary" />
-                  Как это работает?
+                  Как работает смена региона?
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <ol className="space-y-3 list-decimal list-inside text-muted-foreground">
-                  <li>Выбираете нужный регион и оплачиваете услугу</li>
-                  <li>Передаете нам данные для входа в аккаунт (безопасно)</li>
-                  <li>Мы меняем регион через официальную поддержку Steam</li>
-                  <li>Получаете аккаунт с новым регионом за 10-30 минут</li>
+                  <li>Вы выбираете нужный регион и отправляете заявку</li>
+                  <li>Мы связываемся с официальной поддержкой Steam</li>
+                  <li>Регион меняется через официальную процедуру (безопасно)</li>
+                  <li>Получаете уведомление о завершении (10-30 минут)</li>
                 </ol>
               </CardContent>
             </Card>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
-      <section className="py-20">
-        <div className="container mx-auto px-4">
-          <div className="text-center mb-12">
-            <h3 className="text-3xl md:text-4xl font-bold mb-4">
-              <span className="gradient-text">Отзывы</span> клиентов
-            </h3>
-            <p className="text-muted-foreground">Что говорят о нас пользователи</p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
-            {reviews.map((review, idx) => (
-              <Card key={idx} className="hover-scale border-border/50 bg-card/80 backdrop-blur">
-                <CardHeader>
-                  <div className="flex items-center justify-between mb-2">
-                    <CardTitle className="text-lg">{review.name}</CardTitle>
-                    <div className="flex gap-1">
-                      {[...Array(review.rating)].map((_, i) => (
-                        <Icon key={i} name="Star" size={16} className="text-yellow-500 fill-yellow-500" />
-                      ))}
-                    </div>
-                  </div>
-                  <CardDescription className="text-base">{review.text}</CardDescription>
-                </CardHeader>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section id="faq" className="py-20 bg-card/50">
-        <div className="container mx-auto px-4">
-          <div className="max-w-3xl mx-auto">
+      {activeTab === 'support' && (
+        <section className="py-16">
+          <div className="container mx-auto px-4 max-w-4xl">
             <div className="text-center mb-12">
-              <h3 className="text-3xl md:text-4xl font-bold mb-4">
-                Часто задаваемые <span className="gradient-text">вопросы</span>
+              <h3 className="text-4xl font-bold mb-4">
+                <span className="gradient-text">Поддержка</span> 24/7
               </h3>
+              <p className="text-muted-foreground text-lg">
+                Ответим на любые вопросы в течение 5 минут
+              </p>
             </div>
 
-            <Accordion type="single" collapsible className="space-y-4">
-              {faqs.map((faq, idx) => (
-                <AccordionItem key={idx} value={`item-${idx}`} className="border border-border/50 rounded-lg px-6 bg-card/80 backdrop-blur">
-                  <AccordionTrigger className="text-lg font-semibold hover:text-primary">
-                    {faq.q}
-                  </AccordionTrigger>
-                  <AccordionContent className="text-muted-foreground">
-                    {faq.a}
-                  </AccordionContent>
-                </AccordionItem>
-              ))}
-            </Accordion>
-          </div>
-        </div>
-      </section>
-
-      <section id="contacts" className="py-20">
-        <div className="container mx-auto px-4">
-          <div className="max-w-4xl mx-auto">
-            <Card className="border-border/50 bg-card/80 backdrop-blur">
-              <CardHeader className="text-center">
-                <CardTitle className="text-3xl mb-4">
-                  Остались <span className="gradient-text">вопросы?</span>
+            <Card className="border-border/50 bg-card/90 backdrop-blur">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Icon name="MessageCircle" size={24} />
+                  Чат с поддержкой
                 </CardTitle>
-                <CardDescription className="text-base">
-                  Свяжитесь с нами удобным способом
-                </CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <Button variant="outline" className="h-16 hover-scale" size="lg">
-                    <Icon name="Send" className="mr-2" size={20} />
-                    Telegram
-                  </Button>
-                  <Button variant="outline" className="h-16 hover-scale" size="lg">
-                    <Icon name="Mail" className="mr-2" size={20} />
-                    Email
-                  </Button>
-                  <Button variant="outline" className="h-16 hover-scale" size="lg">
-                    <Icon name="MessageCircle" className="mr-2" size={20} />
-                    WhatsApp
-                  </Button>
-                </div>
+              <CardContent className="space-y-4">
+                {!user ? (
+                  <div className="text-center py-12">
+                    <Icon name="Lock" size={48} className="mx-auto mb-4 text-muted-foreground" />
+                    <p className="text-muted-foreground mb-4">
+                      Войдите, чтобы связаться с поддержкой
+                    </p>
+                    <Button onClick={() => setShowAuthDialog(true)} className="gradient-primary border-0">
+                      Войти через Telegram
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="h-96 overflow-y-auto space-y-3 p-4 border border-border rounded-lg bg-background/50">
+                      {supportMessages.length === 0 ? (
+                        <div className="text-center text-muted-foreground py-8">
+                          Начните диалог с поддержкой
+                        </div>
+                      ) : (
+                        supportMessages.map((msg) => (
+                          <div
+                            key={msg.id}
+                            className={`flex ${msg.is_admin ? 'justify-start' : 'justify-end'}`}
+                          >
+                            <div
+                              className={`max-w-[70%] p-3 rounded-lg ${
+                                msg.is_admin
+                                  ? 'bg-card border border-border'
+                                  : 'gradient-primary text-white'
+                              }`}
+                            >
+                              <p className="text-sm">{msg.message}</p>
+                              <p className={`text-xs mt-1 ${msg.is_admin ? 'text-muted-foreground' : 'text-white/70'}`}>
+                                {new Date(msg.created_at).toLocaleTimeString('ru-RU')}
+                              </p>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    <div className="flex gap-2">
+                      <Textarea
+                        placeholder="Введите ваше сообщение..."
+                        value={supportMessage}
+                        onChange={(e) => setSupportMessage(e.target.value)}
+                        className="resize-none"
+                        rows={2}
+                      />
+                      <Button
+                        onClick={handleSendMessage}
+                        disabled={!supportMessage.trim()}
+                        className="gradient-primary border-0 px-6"
+                      >
+                        <Icon name="Send" size={20} />
+                      </Button>
+                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
-      <footer className="border-t border-border bg-card/50 py-8">
+      <Dialog open={showAuthDialog} onOpenChange={setShowAuthDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-2xl">Вход в аккаунт</DialogTitle>
+            <DialogDescription>
+              Войдите через Telegram, чтобы пользоваться всеми возможностями сервиса
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-6">
+            <TelegramLoginButton onAuth={handleAuth} />
+          </div>
+          <p className="text-sm text-center text-muted-foreground">
+            Нажимая кнопку, вы соглашаетесь с политикой конфиденциальности
+          </p>
+        </DialogContent>
+      </Dialog>
+
+      <footer className="border-t border-border bg-card/30 py-12">
         <div className="container mx-auto px-4">
-          <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-            <p className="text-muted-foreground">
-              © 2024 GE.PAY. Все права защищены.
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
+            <div>
+              <div className="flex items-center gap-2 mb-4">
+                <div className="w-10 h-10 rounded-xl gradient-primary flex items-center justify-center">
+                  <Icon name="Gamepad2" size={24} className="text-white" />
+                </div>
+                <h3 className="text-xl font-bold">GE.PAY</h3>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Надёжный сервис пополнения Steam с 2020 года
+              </p>
+            </div>
+
+            <div>
+              <h4 className="font-semibold mb-4">Услуги</h4>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p className="hover:text-primary cursor-pointer">Пополнение Steam</p>
+                <p className="hover:text-primary cursor-pointer">Смена региона</p>
+                <p className="hover:text-primary cursor-pointer">Поддержка 24/7</p>
+              </div>
+            </div>
+
+            <div>
+              <h4 className="font-semibold mb-4">Информация</h4>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p className="hover:text-primary cursor-pointer">О нас</p>
+                <p className="hover:text-primary cursor-pointer">FAQ</p>
+                <p className="hover:text-primary cursor-pointer">Отзывы</p>
+              </div>
+            </div>
+
+            <div>
+              <h4 className="font-semibold mb-4">Контакты</h4>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p className="flex items-center gap-2">
+                  <Icon name="Send" size={16} />
+                  Telegram
+                </p>
+                <p className="flex items-center gap-2">
+                  <Icon name="Mail" size={16} />
+                  Email
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t border-border pt-8 flex flex-col md:flex-row justify-between items-center gap-4">
+            <p className="text-sm text-muted-foreground">
+              © 2024 GE.PAY. Все права защищены
             </p>
-            <div className="flex gap-6">
-              <a href="#" className="text-muted-foreground hover:text-primary transition-colors">
-                Политика конфиденциальности
-              </a>
-              <a href="#" className="text-muted-foreground hover:text-primary transition-colors">
-                Условия использования
-              </a>
+            <div className="flex gap-6 text-sm text-muted-foreground">
+              <a href="#" className="hover:text-primary">Политика конфиденциальности</a>
+              <a href="#" className="hover:text-primary">Условия использования</a>
             </div>
           </div>
         </div>

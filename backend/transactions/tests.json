@@ -1,0 +1,23 @@
+{
+  "tests": [
+    {
+      "name": "Create new transaction",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "user_id": 1,
+        "type": "topup",
+        "amount": 1000,
+        "steam_login": "testuser"
+      },
+      "expectedStatus": 201,
+      "expectedBody": {
+        "success": true,
+        "transaction": {
+          "type": "topup"
+        }
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}
